@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # LocalStack - AWS emulator for local development
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"            # LocalStack Gateway
+      - "4567:4567"            # LocalStack Dashboard
+    environment:
+      - SERVICES=s3,dynamodb,kinesis,lambda,iam,cloudwatch
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LAMBDA_EXECUTOR=docker
+      - KINESIS_ERROR_PROBABILITY=0.0
+    volumes:
+      - "localstack-data:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./scripts/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh"
+    networks:
+      - app-network
+
+  # Optional: Redis for caching (if needed)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   networks:
+  #     - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  localstack-data:
+  # redis-data:

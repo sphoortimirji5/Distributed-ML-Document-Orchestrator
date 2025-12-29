@@ -1,0 +1,438 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Distributed ML Document Orchestrator - Production Infrastructure
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - development
+      - staging
+      - production
+    Description: Environment name
+  
+  GeminiApiKey:
+    Type: String
+    NoEcho: true
+    Description: Gemini API key for ML processing
+  
+  FileSizeThresholdMB:
+    Type: Number
+    Default: 10
+    Description: File size threshold for sync vs async processing (MB)
+  
+  KinesisShardCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 10
+    Description: Number of Kinesis shards
+
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        NODE_ENV: !Ref Environment
+        DYNAMODB_TABLE_NAME: !Ref DocumentTable
+        S3_BUCKET_NAME: !Ref PDFBucket
+        S3_RESULTS_BUCKET: !Ref ResultsBucket
+        KINESIS_STREAM_NAME: !Ref ProcessingStream
+        FILE_SIZE_THRESHOLD_MB: !Ref FileSizeThresholdMB
+        SSM_PARAMETER_PATH: !Sub '/${AWS::StackName}/${Environment}/'
+
+Resources:
+  # ========================================
+  # S3 Buckets
+  # ========================================
+  PDFBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-pdfs-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldFiles
+            Status: Enabled
+            ExpirationInDays: 90
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+            AllowedHeaders:
+              - '*'
+            MaxAge: 3600
+
+  ResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-results-${Environment}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: MoveToGlacier
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: GLACIER
+
+  # ========================================
+  # DynamoDB Table
+  # ========================================
+  DocumentTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-documents-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  # ========================================
+  # Kinesis Stream
+  # ========================================
+  ProcessingStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub '${AWS::StackName}-processing-${Environment}'
+      ShardCount: !Ref KinesisShardCount
+      RetentionPeriodHours: 24
+      StreamEncryption:
+        EncryptionType: KMS
+        KeyId: alias/aws/kinesis
+
+  # ========================================
+  # Lambda Worker Function
+  # ========================================
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-worker-${Environment}'
+      CodeUri: ../apps/worker/
+      Handler: dist/handler.handler
+      ReservedConcurrentExecutions: 50
+      Events:
+        KinesisEvent:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt ProcessingStream.Arn
+            StartingPosition: LATEST
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 5
+            ParallelizationFactor: 5
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DocumentTable
+        - S3CrudPolicy:
+            BucketName: !Ref PDFBucket
+        - S3CrudPolicy:
+            BucketName: !Ref ResultsBucket
+        - KinesisStreamReadPolicy:
+            StreamName: !Ref ProcessingStream
+        - CloudWatchPutMetricPolicy: {}
+
+  # ========================================
+  # Aggregator Lambda Function
+  # ========================================
+  AggregatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-aggregator-${Environment}'
+      CodeUri: ../apps/distributed-ml-document-orchestrator/
+      Handler: dist/apps/distributed-ml-document-orchestrator/src/aggregator/handler.handler
+      Events:
+        StreamEvent:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt DocumentTable.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 1
+            FilterCriteria:
+              Filters:
+                - Pattern: '{"eventName": ["MODIFY"], "dynamodb": {"NewImage": {"SK": {"S": ["STATUS"]}, "overallStatus": {"S": ["processing"]}, "processedPages": {"N": [{"numeric": ["=", "totalPages"]}]}}}}'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DocumentTable
+        - S3CrudPolicy:
+            BucketName: !Ref ResultsBucket
+        - CloudWatchPutMetricPolicy: {}
+
+  # ========================================
+  # ECS Cluster for API Gateway & Orchestrator
+  # ========================================
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${AWS::StackName}-cluster-${Environment}'
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 1
+
+  # VPC for ECS
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  Route:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref RouteTable
+
+  SubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref RouteTable
+
+  # Security Group
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ECS tasks
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3001
+          CidrIp: 0.0.0.0/0
+
+  # ECS Task Execution Role
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ========================================
+  # Secrets & Configuration (SSM)
+  # ========================================
+  GeminiApiKeyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${AWS::StackName}/${Environment}/GEMINI_API_KEY'
+      Type: String
+      Value: !Ref GeminiApiKey
+      Description: Gemini API key for ML processing
+
+  # ECS Task Role
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AppPermissions
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:DeleteItem
+                Resource: !GetAtt DocumentTable.Arn
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                Resource:
+                  - !GetAtt PDFBucket.Arn
+                  - !Sub '${PDFBucket.Arn}/*'
+                  - !GetAtt ResultsBucket.Arn
+                  - !Sub '${ResultsBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - kinesis:PutRecord
+                  - kinesis:PutRecords
+                  - kinesis:DescribeStream
+                Resource: !GetAtt ProcessingStream.Arn
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/${Environment}/*'
+
+  # CloudWatch Log Group
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ecs/${AWS::StackName}-${Environment}'
+      RetentionInDays: 7
+
+  # ========================================
+  # CloudWatch Alarms
+  # ========================================
+  WorkerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-worker-errors-${Environment}'
+      AlarmDescription: Alert when worker function has errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref WorkerFunction
+
+  DynamoDBThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-dynamodb-throttles-${Environment}'
+      AlarmDescription: Alert when DynamoDB is throttling
+      MetricName: UserErrors
+      Namespace: AWS/DynamoDB
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: TableName
+          Value: !Ref DocumentTable
+
+Outputs:
+  PDFBucketName:
+    Description: S3 bucket for PDFs
+    Value: !Ref PDFBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-PDFBucket'
+
+  ResultsBucketName:
+    Description: S3 bucket for results
+    Value: !Ref ResultsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ResultsBucket'
+
+  DynamoDBTableName:
+    Description: DynamoDB table name
+    Value: !Ref DocumentTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DocumentTable'
+
+  KinesisStreamName:
+    Description: Kinesis stream name
+    Value: !Ref ProcessingStream
+    Export:
+      Name: !Sub '${AWS::StackName}-ProcessingStream'
+
+  WorkerFunctionArn:
+    Description: Worker Lambda function ARN
+    Value: !GetAtt WorkerFunction.Arn
+
+  ECSClusterName:
+    Description: ECS cluster name
+    Value: !Ref ECSCluster
+
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VPC'

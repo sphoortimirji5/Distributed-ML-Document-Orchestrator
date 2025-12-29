@@ -1,0 +1,66 @@
+{
+  "name": "distributed-ml-document-orchestrator",
+  "version": "1.0.0",
+  "description": "Distributed ML Document Orchestrator - Multi-tenant PDF processing system",
+  "private": true,
+  "workspaces": [
+    "distributed-ml-document-orchestrator"
+  ],
+  "scripts": {
+    "dev": "cd distributed-ml-document-orchestrator && nx run-many --target=serve --all --parallel",
+    "dev:api-gateway": "cd distributed-ml-document-orchestrator && nx serve distributed-ml-document-orchestrator",
+    "dev:orchestrator": "cd distributed-ml-document-orchestrator && nx serve distributed-ml-document-orchestrator",
+    "dev:consumer": "cd distributed-ml-document-orchestrator && nx serve distributed-ml-document-orchestrator",
+    "dev:worker": "cd distributed-ml-document-orchestrator && nx serve distributed-ml-document-orchestrator",
+    "build": "cd distributed-ml-document-orchestrator && nx run-many --target=build --all",
+    "test": "cd distributed-ml-document-orchestrator && nx run-many --target=test --all",
+    "test:integration": "cd distributed-ml-document-orchestrator && nx run-many --target=test:integration --all",
+    "test:e2e": "cd distributed-ml-document-orchestrator && nx run-many --target=test:e2e --all",
+    "lint": "cd distributed-ml-document-orchestrator && nx run-many --target=lint --all",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "init:local": "bash scripts/init-aws.sh",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "logs:worker": "nx run worker:logs",
+    "deploy:sam": "sam build && sam deploy",
+    "deploy:terraform": "cd infrastructure/terraform && terraform apply"
+  },
+  "devDependencies": {
+    "@nx/js": "^18.0.0",
+    "@nx/nest": "^18.0.0",
+    "@nx/node": "^18.0.0",
+    "@nx/webpack": "^22.3.3",
+    "@nx/workspace": "^18.0.0",
+    "@types/node": "^20.10.0",
+    "@types/pdf-parse": "^1.1.5",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.55.0",
+    "eslint-config-prettier": "^9.1.0",
+    "nx": "^18.0.0",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.3",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.958.0",
+    "@aws-sdk/client-kinesis": "^3.958.0",
+    "@aws-sdk/client-s3": "^3.958.0",
+    "@aws-sdk/lib-dynamodb": "^3.958.0",
+    "@aws-sdk/s3-request-presigner": "^3.958.0",
+    "@google/generative-ai": "^0.1.3",
+    "@nestjs/common": "^10.2.10",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^10.2.10",
+    "@nestjs/platform-express": "^10.2.10",
+    "pdf-parse": "1.1.1",
+    "reflect-metadata": "^0.1.13",
+    "rxjs": "^7.8.1",
+    "zod": "^3.22.4"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

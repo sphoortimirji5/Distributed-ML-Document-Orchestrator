@@ -1,0 +1,6 @@
+aws_region          = "us-east-1"
+environment         = "production"
+project_name        = "document-orchestrator"
+gemini_api_key      = "your-gemini-api-key"
+file_size_threshold_mb = 10
+kinesis_shard_count = 1

@@ -1,0 +1,124 @@
+{
+  "name": "distributed-ml-document-orchestrator",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/distributed-ml-document-orchestrator/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": [
+        "{options.outputPath}"
+      ],
+      "defaultConfiguration": "production",
+      "options": {
+        "target": "node",
+        "compiler": "tsc",
+        "outputPath": "dist/apps/distributed-ml-document-orchestrator",
+        "main": "apps/distributed-ml-document-orchestrator/src/main.ts",
+        "tsConfig": "apps/distributed-ml-document-orchestrator/tsconfig.app.json",
+        "assets": [
+          "apps/distributed-ml-document-orchestrator/src/assets"
+        ],
+        "webpackConfig": "apps/distributed-ml-document-orchestrator/webpack.config.js"
+      },
+      "configurations": {
+        "development": {
+          "optimization": false,
+          "extractLicenses": false,
+          "inspect": false
+        },
+        "production": {
+          "optimization": true,
+          "extractLicenses": true,
+          "inspect": false
+        }
+      }
+    },
+    "prune-lockfile": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": true,
+      "executor": "@nx/js:prune-lockfile",
+      "outputs": [
+        "{workspaceRoot}/dist/apps/distributed-ml-document-orchestrator/package.json",
+        "{workspaceRoot}/dist/apps/distributed-ml-document-orchestrator/package-lock.json"
+      ],
+      "options": {
+        "buildTarget": "build"
+      }
+    },
+    "copy-workspace-modules": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": true,
+      "outputs": [
+        "{workspaceRoot}/dist/apps/distributed-ml-document-orchestrator/workspace_modules"
+      ],
+      "executor": "@nx/js:copy-workspace-modules",
+      "options": {
+        "buildTarget": "build"
+      }
+    },
+    "prune": {
+      "dependsOn": [
+        "prune-lockfile",
+        "copy-workspace-modules"
+      ],
+      "executor": "nx:noop"
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "dependsOn": [
+        "build"
+      ],
+      "options": {
+        "buildTarget": "distributed-ml-document-orchestrator:build",
+        "runBuildTargetDependencies": false
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "distributed-ml-document-orchestrator:build:development"
+        },
+        "production": {
+          "buildTarget": "distributed-ml-document-orchestrator:build:production"
+        }
+      }
+    },
+    "test": {
+      "options": {
+        "passWithNoTests": true
+      }
+    },
+    "test:integration": {
+      "executor": "@nx/jest:jest",
+      "outputs": [
+        "{workspaceRoot}/coverage/{projectRoot}"
+      ],
+      "options": {
+        "jestConfig": "apps/distributed-ml-document-orchestrator/jest.config.cts",
+        "passWithNoTests": true,
+        "testMatch": [
+          "**/*.integration.spec.ts"
+        ]
+      }
+    },
+    "test:e2e": {
+      "executor": "@nx/jest:jest",
+      "outputs": [
+        "{workspaceRoot}/coverage/{projectRoot}"
+      ],
+      "options": {
+        "jestConfig": "apps/distributed-ml-document-orchestrator/jest.config.cts",
+        "passWithNoTests": true,
+        "testMatch": [
+          "**/*.e2e.spec.ts"
+        ]
+      }
+    }
+  }
+}
