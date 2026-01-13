@@ -1,114 +1,115 @@
 # Distributed ML Document Orchestrator
+Multi-tenant PDF processing pipeline with parallel ML analysis.
 
-A horizontally scalable, multi-tenant API service for processing PDF documents through ML pipelines. Supports both synchronous (small files) and asynchronous (large files) processing workflows with intelligent chunking and parallel processing.
+## The Problem
+Processing large volumes of PDF documents through ML models often hits scaling bottlenecks, high latency for large files, and reliability issues due to API timeouts or transient failures. This system orchestrates these workloads by separating synchronous ingestion from asynchronous processing.
 
-## Architecture Overview
+## Real-World Constraint
+**Latency vs. Reliability**: Synchronous processing is limited by the 29-second AWS API Gateway timeout. Any document requiring >20s of ML analysis must transition to the async boundary to ensure delivery.
 
-The system follows an event-driven, microservices architecture optimized for AWS.
+## TL;DR
+- **Horizontally Scalable**: Parallel processing of PDF pages via ECS Fargate.
+- **Multi-tenant**: Strict data isolation using tenant-prefixed S3 paths and DynamoDB keys.
+- **Resilient**: Event-driven architecture with Kinesis-backed retries and idempotency.
+- **ML-Powered**: Native integration with Gemini API for document intelligence.
+- **Serverless Aggregation**: Automatic result assembly via DynamoDB Streams and Lambda.
+
+## System Architecture
+
+### Entry Point
+- **REST API**: `POST /jobs` accepts PDF uploads and metadata.
+- **Orchestrator**: Routes jobs to `sync` (small files) or `async` (large files) based on size thresholds.
+
+### Async Boundary
+- **Kinesis Data Streams**: Acts as the durable buffer between ingestion and processing. Once an event is in Kinesis, the system guarantees eventual processing.
+
+### Durability & Idempotency
+- **State Store**: DynamoDB tracks job status and page-level results.
+- **Idempotency**: Consumers use `jobId` + `pageNumber` to ensure re-processed events don't create duplicate results.
+- **Storage**: S3 provides 99.999999999% durability for source PDFs and final JSON results.
+
+### Downstream Protection
+- **Rate Limiting**: API Gateway throttles incoming requests per tenant.
+- **Backpressure**: Kinesis consumers scale based on stream depth, preventing Gemini API exhaustion through controlled concurrency.
+
+## Environment Hub
+
+| Environment | Purpose | Documentation |
+| :--- | :--- | :--- |
+| **Local** | Development & Integration Testing | [DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| **Production** | Scalable AWS Deployment | [PRODUCTION.md](docs/PRODUCTION.md) |
+| **Migration** | Infrastructure Evolution | [docs/migration.md](docs/migration.md) |
+
+## Architecture Diagram
 
 ```mermaid
 flowchart TD
     Client["Client"] -- "Upload PDF" --> API["API Gateway"]
     
-    API -- "Store PDF" --> S3_PDF[("S3: PDF Bucket")]
-    API -- "Save Metadata" --> DDB_Meta[("DynamoDB: Metadata")]
-    API -- "Trigger Event" --> Kinesis{{"Kinesis Stream"}}
+    subgraph Ingestion ["Ingestion (Sync)"]
+        API -- "Store" --> S3_PDF[("S3: PDF Bucket")]
+        API -- "Metadata" --> DDB_Meta[("DynamoDB: Metadata")]
+    end
 
-    subgraph Processing ["Processing Pipeline"]
+    API -- "Trigger" --> Kinesis{{"Kinesis Stream (Async Boundary)"}}
+
+    subgraph Processing ["Processing (Async)"]
         direction TB
-        Consumer["Consumer Service"]
+        Consumer["Consumer Service (ECS)"]
         Gemini["Gemini ML API"]
         DDB_Status[("DynamoDB: Status")]
     end
 
     Kinesis -- "Consume" --> Consumer
-    Consumer -- "Download" --> S3_PDF
     Consumer -- "Analyze" --> Gemini
-    Gemini -- "JSON" --> Consumer
-    Consumer -- "Update Status" --> DDB_Status
+    Consumer -- "Update" --> DDB_Status
 
-    subgraph Aggregation ["Aggregation Pipeline"]
-        direction TB
+    subgraph Aggregation ["Aggregation"]
         Aggregator["Aggregator Lambda"]
         S3_Results[("S3: Results Bucket")]
     end
 
-    DDB_Status -- "Stream Trigger" --> Aggregator
-    Aggregator -- "Assemble JSON" --> S3_Results
-    Aggregator -- "Mark Complete" --> DDB_Status
+    DDB_Status -- "Stream" --> Aggregator
+    Aggregator -- "Assemble" --> S3_Results
 ```
 
-### Key Components
-- **API Gateway**: Handles multi-tenant authentication, rate limiting, and PDF uploads.
-- **Orchestrator**: Routes jobs to sync (small files) or async (large files) workflows.
-- **Consumer Service**: Containerized service that extracts text page-by-page and performs parallel ML analysis via Gemini.
-- **Aggregator Lambda**: Serverless function triggered by DynamoDB Streams to assemble final results once all chunks are processed.
-- **DynamoDB Streams**: Captures status updates to trigger the final assembly automatically.
+## Key Design Decisions
 
-## Technology Stack
+| Decision | Rationale |
+| :--- | :--- |
+| **Tech Stack** | NestJS for type-safety; ECS Fargate for long-running compute; Lambda for short-lived aggregation. |
+| **Ordering** | Kinesis Partition Keys (by `jobId`) ensure sequential processing of chunks if required, though pages are processed in parallel. |
+| **Concurrency** | ECS task scaling handles burst traffic; Gemini rate limits are managed via consumer-side semaphore/throttling. |
 
-### Backend
-- **NestJS** - TypeScript framework for API Gateway, Orchestrator & Workers
-- **AWS ECS Fargate** - Containerized workers for chunk processing
-- **AWS Lambda** - Final aggregation/assembly only
-- **AWS SDK v3** - AWS service integrations
+## Scale & Limits
 
-### AWS Services
-- **S3** - PDF storage and results
-- **DynamoDB** - Two tables: File Metadata + Document Status/Pages
-- **Kinesis Data Streams** - Event streaming
-- **ECS Fargate** - Containerized worker pool for chunk processing
-- **Lambda** - Final aggregation only
-- **Application Load Balancer** - Routes traffic to ECS services
-- **CloudWatch** - Logging and monitoring
+- **Expected Traffic**: Designed for 100+ concurrent document uploads.
+- **First Bottleneck**: Gemini API rate limits (RPM/TPM).
+- **Non-Goals**: Real-time <1s latency for 100+ page documents; OCR for handwritten text (relies on Gemini vision).
 
-### ML Integration
-- **Gemini API** - Document analysis including summarization, entity extraction, key point identification, and sentiment analysis.
+## Failure Modes
 
----
+| Failure | System Response | Recovery |
+| :--- | :--- | :--- |
+| **Gemini Timeout** | Consumer retries with exponential backoff. | Automatic via Kinesis retry policy. |
+| **Consumer Crash** | Kinesis checkpointing ensures no data loss. | New ECS task picks up from last checkpoint. |
+| **S3 Outage** | API returns 503; ingestion halts. | Manual retry once AWS service restores. |
 
-## Getting Started
+## Quickstart (Local)
 
-For detailed instructions on setting up the project locally or deploying to production, please refer to the following guides:
+### Prerequisites
+- Node.js 18+, Docker, Gemini API Key.
 
-- [Local Development Guide](docs/DEVELOPMENT.md) - Setup **LocalStack (AWS Emulator)**, environment variables, and running tests.
-- [Production Deployment Guide](docs/PRODUCTION.md) - AWS architecture, SAM/Terraform deployment, and security.
-
-## Testing
-
-### Unit & Integration Tests
+### Run
 ```bash
-npm run test
+docker-compose up -d && npm run init:local && npm run dev
+```
+
+### Test
+```bash
 npm run test:integration
 ```
 
-### E2E Tests
-```bash
-cd distributed-ml-document-orchestrator
-node scripts/e2e-test.js
-```
+---
+**Note**: This project maintains strict separation between local emulation (LocalStack) and production AWS infrastructure.
 
-## Project Structure
-
-```
-Distributed-ML-Document-Orchestrator/
-|-- docs/                     # Detailed Documentation
-|-- distributed-ml-document-orchestrator/
-|   |-- apps/
-|   |   +-- distributed-ml-document-orchestrator/
-|   |       |-- src/
-|   |       |   |-- app/          # API Gateway & Controllers
-|   |       |   |-- consumer/     # Kinesis Consumer & Document Chunker
-|   |       |   |-- database/     # DynamoDB Services & Models
-|   |       |   |-- ml/           # Gemini ML Integration Service
-|   |       |   |-- queue/        # Kinesis Messaging Service
-|   |       |   +-- storage/      # S3 Storage Service
-|-- infrastructure/           # AWS Infrastructure (SAM/Terraform)
-|-- scripts/                  # Utility & Initialization scripts
-|-- docker-compose.yml        # LocalStack & Infrastructure setup
-+-- README.md
-```
-
-## License
-
-MIT License - see LICENSE file for details
