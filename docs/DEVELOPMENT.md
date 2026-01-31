@@ -97,6 +97,25 @@ npm run dev
 npm run dev:api-gateway    # Port 3005
 ```
 
+## Git Hooks (Recommended)
+
+Install git hooks to run tests automatically before pushing:
+
+```bash
+./scripts/setup-git-hooks.sh
+```
+
+This installs a pre-push hook that runs:
+1. Unit tests (`npm test`)
+2. Production build (`npm run build`)
+
+If tests fail, the push is aborted.
+
+**Skip hooks (emergencies only):**
+```bash
+git push --no-verify
+```
+
 ## Testing
 
 ### Unit Tests

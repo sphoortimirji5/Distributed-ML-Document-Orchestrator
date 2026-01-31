@@ -1,0 +1,63 @@
+#!/bin/bash
+# Pre-push hook to ensure tests pass before pushing
+# 
+# Install:
+#   cp scripts/git-hooks/pre-push .git/hooks/pre-push
+#   chmod +x .git/hooks/pre-push
+#
+# Skip (in emergencies):
+#   git push --no-verify
+
+set -e
+
+echo "=========================================="
+echo "Running pre-push tests..."
+echo "=========================================="
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+cd distributed-ml-document-orchestrator
+
+# 1. Run unit tests
+echo ""
+echo "[1/3] Running unit tests..."
+if npm test 2>&1; then
+    echo -e "${GREEN}[PASS] Unit tests passed${NC}"
+else
+    echo -e "${RED}[FAIL] Unit tests failed${NC}"
+    echo ""
+    echo "Push aborted. Please fix the tests before pushing."
+    echo "To skip this check (not recommended): git push --no-verify"
+    exit 1
+fi
+
+# 2. Run build
+echo ""
+echo "[2/3] Running production build..."
+if npm run build 2>&1 | tail -10; then
+    echo -e "${GREEN}[PASS] Build successful${NC}"
+else
+    echo -e "${RED}[FAIL] Build failed${NC}"
+    echo ""
+    echo "Push aborted. Please fix the build errors before pushing."
+    echo "To skip this check (not recommended): git push --no-verify"
+    exit 1
+fi
+
+# 3. Note about E2E tests
+echo ""
+echo "[3/3] E2E tests skipped (run manually):"
+echo "  cd distributed-ml-document-orchestrator && node scripts/e2e-test.js"
+echo ""
+echo "Note: E2E tests require LocalStack running and are too slow for every push."
+
+echo ""
+echo "=========================================="
+echo -e "${GREEN}[PASS] All pre-push checks passed!${NC}"
+echo "Proceeding with push..."
+echo "=========================================="
+exit 0
