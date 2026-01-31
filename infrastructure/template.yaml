@@ -28,6 +28,24 @@ Parameters:
     MinValue: 1
     MaxValue: 10
     Description: Number of Kinesis shards
+  
+  LLMProvider:
+    Type: String
+    Default: gemini
+    AllowedValues:
+      - gemini
+      - bedrock
+    Description: LLM provider to use (gemini for API key auth, bedrock for IAM auth)
+  
+  BedrockModel:
+    Type: String
+    Default: anthropic.claude-3-sonnet-20240229-v1:0
+    AllowedValues:
+      - anthropic.claude-3-sonnet-20240229-v1:0
+      - anthropic.claude-3-haiku-20240307-v1:0
+      - meta.llama2-13b-chat-v1
+      - amazon.titan-text-express-v1
+    Description: Bedrock model ID (only used when LLMProvider=bedrock)
 
 Globals:
   Function:
@@ -43,6 +61,8 @@ Globals:
         KINESIS_STREAM_NAME: !Ref ProcessingStream
         FILE_SIZE_THRESHOLD_MB: !Ref FileSizeThresholdMB
         SSM_PARAMETER_PATH: !Sub '/${AWS::StackName}/${Environment}/'
+        LLM_PROVIDER: !Ref LLMProvider
+        BEDROCK_MODEL: !Ref BedrockModel
 
 Resources:
   # ========================================
@@ -367,6 +387,14 @@ Resources:
                   - ssm:GetParameter
                   - ssm:GetParameters
                 Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/${Environment}/*'
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: 
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-sonnet-*'
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-*'
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/meta.llama2-*'
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-*'
 
   # CloudWatch Log Group
   LogGroup:

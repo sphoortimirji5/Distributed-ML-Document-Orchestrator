@@ -86,9 +86,16 @@ DYNAMODB_TABLE_NAME=<stack-name>-documents-production
 # Kinesis
 KINESIS_STREAM_NAME=<stack-name>-processing-production
 
-# Gemini (from SSM Parameter Store)
+# LLM Provider Configuration
+# Option 1: Gemini (for development/testing)
+LLM_PROVIDER=gemini
 GEMINI_API_KEY=<from-ssm-parameter-store>
 GEMINI_MODEL=gemini-1.5-flash
+
+# Option 2: AWS Bedrock (recommended for production)
+# LLM_PROVIDER=bedrock
+# BEDROCK_MODEL=anthropic.claude-3-sonnet-20240229-v1:0
+# No API key needed - uses IAM Task Role authentication
 
 # Tuning
 FILE_SIZE_THRESHOLD_MB=2
@@ -96,6 +103,45 @@ FILE_SIZE_THRESHOLD_MB=2
 # Logging
 LOG_LEVEL=info
 ```
+
+## LLM Provider Configuration
+
+The system supports multiple LLM providers via a pluggable architecture:
+
+| Provider | Authentication | Best For | Models |
+|----------|---------------|----------|--------|
+| **Gemini** | API Key | Development, testing | gemini-1.5-flash, gemini-pro |
+| **Bedrock** | IAM Task Role | Production | Claude, Llama, Titan |
+
+### Using AWS Bedrock in Production (Recommended)
+
+Bedrock uses IAM authentication - no API keys in environment variables:
+
+1. **Set the provider:**
+   ```bash
+   LLM_PROVIDER=bedrock
+   BEDROCK_MODEL=anthropic.claude-3-sonnet-20240229-v1:0
+   ```
+
+2. **IAM Permissions (automatically configured):**
+   The ECS Task Role has `bedrock:InvokeModel` permission for supported models.
+
+3. **Benefits:**
+   - No API keys to manage or rotate
+   - IAM access logging and auditing
+   - VPC endpoint support for private connectivity
+   - Pay-per-use pricing
+
+### Using Gemini for Development
+
+For local development with LocalStack:
+
+1. **Get API key:** https://ai.google.dev/
+2. **Set environment variables:**
+   ```bash
+   LLM_PROVIDER=gemini
+   GEMINI_API_KEY=your_key_here
+   ```
 
 ## Deployment Options
 
