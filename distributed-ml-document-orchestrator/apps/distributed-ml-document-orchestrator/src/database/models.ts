@@ -29,9 +29,16 @@ export interface FileMetadata {
     // TTL for automatic cleanup (optional)
     ttl?: number;
 
+    // Content hash for deduplication (SHA-256)
+    contentHash?: string;
+
     // GSI1 for tenant queries
     GSI1PK?: string; // Format: TENANT#<tenantId>
     GSI1SK?: string; // Format: FILE#<uploadedAt>
+
+    // GSI2 for content hash deduplication
+    GSI2PK?: string; // Format: HASH#<tenantId>
+    GSI2SK?: string; // Format: <contentHash>
 }
 
 /**
@@ -114,6 +121,13 @@ export class DynamoDBKeyGenerator {
         return {
             GSI1PK: `TENANT#${tenantId}`,
             GSI1SK: `FILE#${uploadedAt}`,
+        };
+    }
+
+    static fileMetadataGSI2Keys(tenantId: string, contentHash: string): { GSI2PK: string; GSI2SK: string } {
+        return {
+            GSI2PK: `HASH#${tenantId}`,
+            GSI2SK: contentHash,
         };
     }
 

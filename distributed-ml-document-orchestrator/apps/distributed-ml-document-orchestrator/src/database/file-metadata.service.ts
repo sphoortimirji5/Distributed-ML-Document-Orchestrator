@@ -18,13 +18,17 @@ export class FileMetadataService {
      * Persists or updates the metadata for an uploaded file.
      * Includes details such as file name, size, and S3 location.
      */
-    async saveFileMetadata(metadata: Omit<FileMetadata, 'PK' | 'SK' | 'GSI1PK' | 'GSI1SK'>): Promise<FileMetadata> {
+    async saveFileMetadata(metadata: Omit<FileMetadata, 'PK' | 'SK' | 'GSI1PK' | 'GSI1SK' | 'GSI2PK' | 'GSI2SK'>): Promise<FileMetadata> {
         const keys = DynamoDBKeyGenerator.fileMetadataKeys(metadata.fileId);
         const gsiKeys = DynamoDBKeyGenerator.fileMetadataGSI1Keys(metadata.tenantId, metadata.uploadedAt);
+        const gsi2Keys = metadata.contentHash
+            ? DynamoDBKeyGenerator.fileMetadataGSI2Keys(metadata.tenantId, metadata.contentHash)
+            : {};
 
         const item: FileMetadata = {
             ...keys,
             ...gsiKeys,
+            ...gsi2Keys,
             ...metadata,
             ttl: DynamoDBKeyGenerator.generateTTL(90), // 90 days retention
         };
@@ -49,6 +53,49 @@ export class FileMetadataService {
             new GetCommand({
                 TableName: this.tableName,
                 Key: keys,
+            }),
+        );
+
+        return (result.Item as FileMetadata) || null;
+    }
+
+    /**
+     * Finds a file by its content hash for deduplication.
+     * Scoped to tenant to prevent cross-tenant hash collisions.
+     */
+    async findByContentHash(tenantId: string, contentHash: string): Promise<FileMetadata | null> {
+        const gsi2Keys = DynamoDBKeyGenerator.fileMetadataGSI2Keys(tenantId, contentHash);
+
+        const result = await this.dynamoClient.send(
+            new QueryCommand({
+                TableName: this.tableName,
+                IndexName: 'GSI2',
+                KeyConditionExpression: 'GSI2PK = :gsi2pk AND GSI2SK = :gsi2sk',
+                ExpressionAttributeValues: {
+                    ':gsi2pk': gsi2Keys.GSI2PK,
+                    ':gsi2sk': gsi2Keys.GSI2SK,
+                },
+                Limit: 1,
+            }),
+        );
+
+        if (result.Items && result.Items.length > 0) {
+            // GSI2 has KEYS_ONLY projection, so fetch full item
+            const keys = result.Items[0] as { PK: string; SK: string };
+            return this.getFileMetadataByKeys(keys.PK, keys.SK);
+        }
+
+        return null;
+    }
+
+    /**
+     * Retrieves file metadata using primary keys (internal helper).
+     */
+    private async getFileMetadataByKeys(pk: string, sk: string): Promise<FileMetadata | null> {
+        const result = await this.dynamoClient.send(
+            new GetCommand({
+                TableName: this.tableName,
+                Key: { PK: pk, SK: sk },
             }),
         );
 

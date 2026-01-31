@@ -16,6 +16,7 @@ import { ConsumerService } from '../consumer/consumer.service';
 import { Express } from 'express';
 import 'multer';
 import { v4 as uuidv4 } from 'uuid';
+import * as crypto from 'crypto';
 
 @Controller('upload')
 export class UploadController {
@@ -42,6 +43,21 @@ export class UploadController {
             throw new BadRequestException('Tenant ID is required');
         }
 
+        // Compute SHA-256 hash for deduplication
+        const contentHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+
+        // Check for existing duplicate
+        const existingFile = await this.fileMetadataService.findByContentHash(tenantId, contentHash);
+        if (existingFile) {
+            this.logger.log(`Duplicate file detected: ${existingFile.fileId} (hash: ${contentHash.substring(0, 16)}...)`);
+            return {
+                message: 'Duplicate file detected',
+                fileId: existingFile.fileId,
+                status: existingFile.status,
+                duplicate: true,
+            };
+        }
+
         const fileId = uuidv4();
         const thresholdMb = parseFloat(process.env.FILE_SIZE_THRESHOLD_MB || '10');
         const isAsync = file.size >= thresholdMb * 1024 * 1024;
@@ -66,6 +82,7 @@ export class UploadController {
                 s3Key: `${tenantId}/${fileId}/${file.originalname}`,
                 processingType: isAsync ? 'async' : 'sync',
                 status: 'uploaded',
+                contentHash,
                 uploadedAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
             });

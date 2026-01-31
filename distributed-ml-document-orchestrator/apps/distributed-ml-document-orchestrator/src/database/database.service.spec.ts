@@ -68,6 +68,42 @@ describe('DynamoDB Services - Local Tests', () => {
             expect(files[0].tenantId).toBe(testTenantId);
         });
 
+        it('should find file by content hash', async () => {
+            const testContentHash = 'abc123def456';
+            const hashTestFileId = `test-hash-file-${Date.now()}`;
+
+            // Save file with content hash
+            await fileMetadataService.saveFileMetadata({
+                fileId: hashTestFileId,
+                fileName: 'hash-test.pdf',
+                fileSize: 1024,
+                mimeType: 'application/pdf',
+                s3Key: `uploads/${hashTestFileId}.pdf`,
+                s3Bucket: 'document-orchestrator-pdfs',
+                tenantId: testTenantId,
+                processingType: 'sync',
+                status: 'uploaded',
+                contentHash: testContentHash,
+                uploadedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            });
+
+            // Find by content hash
+            const found = await fileMetadataService.findByContentHash(testTenantId, testContentHash);
+
+            expect(found).toBeDefined();
+            expect(found?.fileId).toBe(hashTestFileId);
+            expect(found?.contentHash).toBe(testContentHash);
+
+            // Cleanup
+            await fileMetadataService.deleteFileMetadata(hashTestFileId);
+        });
+
+        it('should return null for non-existent content hash', async () => {
+            const result = await fileMetadataService.findByContentHash(testTenantId, 'nonexistent-hash');
+            expect(result).toBeNull();
+        });
+
         it('should delete file metadata', async () => {
             await fileMetadataService.deleteFileMetadata(testFileId);
 

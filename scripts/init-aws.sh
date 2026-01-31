@@ -46,6 +46,8 @@ awslocal dynamodb create-table \
     AttributeName=SK,AttributeType=S \
     AttributeName=GSI1PK,AttributeType=S \
     AttributeName=GSI1SK,AttributeType=S \
+    AttributeName=GSI2PK,AttributeType=S \
+    AttributeName=GSI2SK,AttributeType=S \
   --key-schema \
     AttributeName=PK,KeyType=HASH \
     AttributeName=SK,KeyType=RANGE \
@@ -59,6 +61,14 @@ awslocal dynamodb create-table \
           {\"AttributeName\":\"GSI1SK\",\"KeyType\":\"RANGE\"}
         ],
         \"Projection\": {\"ProjectionType\":\"ALL\"}
+      },
+      {
+        \"IndexName\": \"GSI2\",
+        \"KeySchema\": [
+          {\"AttributeName\":\"GSI2PK\",\"KeyType\":\"HASH\"},
+          {\"AttributeName\":\"GSI2SK\",\"KeyType\":\"RANGE\"}
+        ],
+        \"Projection\": {\"ProjectionType\":\"KEYS_ONLY\"}
       }
     ]" \
   --stream-specification \
@@ -71,6 +81,8 @@ echo "DynamoDB table created with single-table design"
 echo "  - Supports FileMetadata (PK: FILE#<id>, SK: METADATA)"
 echo "  - Supports DocumentStatus (PK: DOC#<id>, SK: STATUS)"
 echo "  - Supports DocumentPages (PK: DOC#<id>, SK: PAGE#<num>)"
+echo "  - GSI1: Tenant queries"
+echo "  - GSI2: Content hash deduplication"
 
 # Kinesis Stream Configuration
 # This stream handles the asynchronous event flow for document processing.
