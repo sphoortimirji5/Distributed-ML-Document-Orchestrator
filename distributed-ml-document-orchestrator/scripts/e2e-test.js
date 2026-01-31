@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const API_URL = 'http://127.0.0.1:3005/api';
-const TENANT_ID = 'test-tenant';
+const TENANT_ID = `test-${Date.now()}`;
 
 async function uploadFile(filePath) {
     const form = new FormData();
