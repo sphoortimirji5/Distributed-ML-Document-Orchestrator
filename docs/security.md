@@ -35,11 +35,11 @@ flowchart LR
 **Critical:** No AWS Access Keys or Secret Keys are stored in the application or environment variables.
 
 ```typescript
-// ✅ CORRECT: SDK auto-discovers credentials from IAM Task Role
+// [CORRECT] SDK auto-discovers credentials from IAM Task Role
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 const client = new DynamoDBClient({ region: 'us-east-1' });
 
-// ❌ WRONG: Never hardcode credentials
+// [WRONG] Never hardcode credentials
 const client = new DynamoDBClient({
   credentials: {
     accessKeyId: 'AKIA...',      // NEVER DO THIS

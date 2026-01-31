@@ -95,7 +95,7 @@ async function runStressTest() {
     const hashes = [];
 
     // Test 1: Hash computation performance
-    console.log('📊 Test 1: SHA-256 Hash Computation');
+    console.log('[TEST] Test 1: SHA-256 Hash Computation');
     const hashTimes = [];
     for (let i = 0; i < ITERATIONS; i++) {
         const buffer = generateFileBuffer(100, `unique-file-${i}`);
@@ -114,7 +114,7 @@ async function runStressTest() {
     }));
 
     // Test 2: Insert unique files
-    console.log('\n📊 Test 2: Insert Unique Files');
+    console.log('\n[TEST] Test 2: Insert Unique Files');
     const insertTimes = [];
     for (let i = 0; i < ITERATIONS; i++) {
         const fileId = `stress-${Date.now()}-${i}`;
@@ -133,7 +133,7 @@ async function runStressTest() {
     }));
 
     // Test 3: Duplicate detection (hash lookup)
-    console.log('\n📊 Test 3: Duplicate Detection (GSI2 Query)');
+    console.log('\n[TEST] Test 3: Duplicate Detection (GSI2 Query)');
     const lookupTimes = [];
     let duplicatesFound = 0;
     for (let i = 0; i < ITERATIONS; i++) {
@@ -153,7 +153,7 @@ async function runStressTest() {
     console.log(`   Duplicates detected: ${duplicatesFound}/${ITERATIONS} (expected: ${ITERATIONS})`);
 
     // Test 4: Non-existent hash lookup
-    console.log('\n📊 Test 4: Non-Existent Hash Lookup');
+    console.log('\n[TEST] Test 4: Non-Existent Hash Lookup');
     const missLookupTimes = [];
     let misses = 0;
     for (let i = 0; i < ITERATIONS; i++) {
@@ -174,7 +174,7 @@ async function runStressTest() {
     console.log(`   Misses: ${misses}/${ITERATIONS} (expected: ${ITERATIONS})`);
 
     // Cleanup
-    console.log('\n🧹 Cleaning up test data...');
+    console.log('\n[CLEANUP] Cleaning up test data...');
     for (const fileId of fileIds) {
         await deleteFileMetadata(fileId);
     }
@@ -186,11 +186,11 @@ async function runStressTest() {
     const avgHashMs = hashTimes.reduce((a, b) => a + b, 0) / ITERATIONS;
     const avgLookupMs = lookupTimes.reduce((a, b) => a + b, 0) / ITERATIONS;
     const totalOverhead = avgHashMs + avgLookupMs;
-    console.log(`⏱️  Average deduplication overhead: ${totalOverhead.toFixed(2)}ms`);
+    console.log(`[METRICS] Average deduplication overhead: ${totalOverhead.toFixed(2)}ms`);
     console.log(`   - Hash computation: ${avgHashMs.toFixed(2)}ms`);
     console.log(`   - GSI2 lookup: ${avgLookupMs.toFixed(2)}ms`);
-    console.log(`✅ All ${duplicatesFound} duplicates correctly detected`);
-    console.log(`✅ All ${misses} non-existent lookups correctly returned null`);
+    console.log(`[PASS] All ${duplicatesFound} duplicates correctly detected`);
+    console.log(`[PASS] All ${misses} non-existent lookups correctly returned null`);
     console.log('='.repeat(60));
 }
 
