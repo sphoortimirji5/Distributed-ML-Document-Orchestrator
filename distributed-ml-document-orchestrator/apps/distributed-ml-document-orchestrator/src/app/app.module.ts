@@ -9,6 +9,8 @@ import { KinesisService } from '../queue/kinesis.service';
 import { GeminiModule } from '../ml/gemini.module';
 import { ConsumerModule } from '../consumer/consumer.module';
 import { AggregatorModule } from '../aggregator/aggregator.module';
+import { UploadModule } from '../upload/upload.module';
+import { UploadService } from '../upload/upload.service';
 import { UploadController } from './upload.controller';
 import { JobsController } from './jobs.controller';
 
@@ -20,6 +22,7 @@ import { JobsController } from './jobs.controller';
         ConsumerModule,
         GeminiModule,
         AggregatorModule,
+        UploadModule,
     ],
     controllers: [UploadController, JobsController],
     providers: [
@@ -27,7 +30,8 @@ import { JobsController } from './jobs.controller';
         DocumentStatusService,
         S3Service,
         KinesisService,
+        UploadService,
     ],
-    exports: [FileMetadataService, DocumentStatusService, S3Service, KinesisService],
+    exports: [FileMetadataService, DocumentStatusService, S3Service, KinesisService, UploadService],
 })
 export class AppModule { }
