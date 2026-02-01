@@ -34,9 +34,15 @@ Processing large volumes of PDF documents through ML models often hits scaling b
 flowchart TD
     Client["Client"] -- "Upload PDF" --> API["API Gateway"]
     
-    subgraph Ingestion ["Ingestion (Sync)"]
+    subgraph Deduplication ["Deduplication Check"]
+        API -- "Compute SHA-256" --> HashCheck{"Hash exists in GSI2?"}
+        HashCheck -- "Yes: Return existing" --> Client
+        HashCheck -- "No: New file" --> StoreFlow
+    end
+    
+    subgraph StoreFlow ["Ingestion (Sync)"]
         API -- "Store" --> S3_PDF[("S3: PDF Bucket")]
-        API -- "Metadata" --> DDB_Meta[("DynamoDB: Metadata")]
+        API -- "Metadata + Hash" --> DDB_Meta[("DynamoDB: Metadata<br/>GSI2: Content Hash")]
     end
 
     API -- "Trigger" --> Kinesis{{"Kinesis Stream (Async Boundary)"}}
@@ -68,9 +74,10 @@ flowchart TD
 ### Async Boundary
 - **Kinesis Data Streams**: Acts as the durable buffer between ingestion and processing. Once an event is in Kinesis, the system guarantees eventual processing.
 
-### Durability & Idempotency
-- **State Store**: DynamoDB tracks job status and page-level results.
+### Deduplication & Idempotency
+- **Content Hash Deduplication**: SHA-256 hash computed on upload; duplicate files return existing fileId without re-processing.
 - **Idempotency**: Consumers use `jobId` + `pageNumber` to ensure re-processed events don't create duplicate results.
+- **State Store**: DynamoDB tracks job status and page-level results with GSI2 for hash-based lookups.
 - **Storage**: S3 provides 99.999999999% durability for source PDFs and final JSON results.
 
 ### Downstream Protection
