@@ -33,38 +33,41 @@ Processing large volumes of PDF documents through ML models often hits scaling b
 ```mermaid
 flowchart TD
     Client["Client"] -- "POST /upload" --> API["API Gateway"]
+    API --> UploadService["Upload Service"]
     
-    subgraph IngestionLayer ["Ingestion Layer (UploadService)"]
-        API --> UploadService["Upload Service"]
+    subgraph IngestionFlow ["Ingestion Flow"]
+        UploadService -- "1. Compute SHA-256" --> HashCheck{"Hash exists in GSI2?"}
         
-        subgraph Deduplication ["Deduplication Check"]
-            UploadService -- "Compute SHA-256" --> HashCheck{"Hash exists in GSI2?"}
-            HashCheck -- "Yes: Return existing fileId" --> API
-        end
+        HashCheck -- "Yes: Duplicate" --> ReturnDup["Return existing fileId"]
+        HashCheck -- "No: New file" --> StoreS3["2. Upload to S3"]
         
-        HashCheck -- "No: New file" --> StoreFlow
+        StoreS3 --> SaveMeta["3. Save Metadata + Hash"]
+        SaveMeta --> CreateStatus["4. Create Status Record"]
+        CreateStatus --> Route["5. Route Processing"]
         
-        subgraph StoreFlow ["Persist Data"]
-            UploadService -- "Upload" --> S3_PDF[("S3: PDF Bucket")]
-            UploadService -- "Save Metadata" --> DDB_Meta[("DynamoDB: Metadata<br/>GSI2: Content Hash")]
-            UploadService -- "Create Status" --> DDB_Status[("DynamoDB: Status")]
-        end
-        
-        subgraph RouteProcessing ["Route Processing"]
-            UploadService -- "If Async" --> Kinesis{{"Kinesis Stream"}}
-            UploadService -- "If Sync" --> Consumer["Consumer Service"]
-        end
+        Route -- "If Async" --> Kinesis{{"Kinesis Stream"}}
+        Route -- "If Sync" --> Consumer["Consumer Service"]
     end
+    
+    ReturnDup --> API
+    
+    S3[("S3: PDF Bucket")]
+    DDB_Meta[("DynamoDB: Metadata<br/>GSI2: Content Hash")]
+    DDB_Status[("DynamoDB: Status")]
+    
+    StoreS3 -.-> S3
+    SaveMeta -.-> DDB_Meta
+    CreateStatus -.-> DDB_Status
 
     subgraph ProcessingLayer ["Processing Layer"]
         Kinesis -- "Consume" --> Consumer
         Consumer -- "Analyze" --> Gemini["Gemini / Bedrock ML API"]
-        Consumer -- "Update Progress" --> DDB_Status
+        Consumer -- "Update" --> DDB_Status
     end
 
     subgraph AggregationLayer ["Aggregation Layer"]
         DDB_Status -- "Stream Trigger" --> Aggregator["Aggregator Lambda"]
-        Aggregator -- "Assemble Results" --> S3_Results[("S3: Results Bucket")]
+        Aggregator -- "Assemble" --> S3_Results[("S3: Results Bucket")]
     end
 
     API -- "Return fileId" --> Client
