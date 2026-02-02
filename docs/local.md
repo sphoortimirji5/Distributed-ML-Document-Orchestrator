@@ -12,6 +12,8 @@ This document provides instructions for setting up the Distributed ML Document O
 | Docker Compose | 2.x+ | Multi-container orchestration |
 | Gemini API Key | - | ML processing ([Get one here](https://ai.google.dev/)) |
 
+> **Note on LLM Providers**: Local development uses **Google Gemini** (API key required). For production, **AWS Bedrock** is recommended (IAM authentication, no API key). See [PRODUCTION.md](PRODUCTION.md#llm-provider-configuration) for details.
+
 ## Environment Setup
 
 Create a `.env` file by copying the template:

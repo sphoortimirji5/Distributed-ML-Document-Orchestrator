@@ -25,7 +25,7 @@ Processing large volumes of PDF documents through ML models often hits scaling b
 | **State** | DynamoDB (status tracking, multi-tenant) |
 | **Queue** | Kinesis Data Streams |
 | **Storage** | S3 (PDFs + Results) |
-| **ML** | Google Gemini API |
+| **ML** | Gemini (local) / AWS Bedrock (prod) |
 | **IaC** | SAM / Terraform |
 
 ## Architecture
@@ -90,13 +90,14 @@ flowchart TD
 - **Rate Limiting**: API Gateway throttles incoming requests per tenant.
 - **Backpressure**: Kinesis consumers scale based on stream depth, preventing Gemini API exhaustion through controlled concurrency.
 
-## Environment Hub
+## Documentation Hub
 
-| Environment | Purpose | Documentation |
-|-------------|---------|---------------|
-| **Local** | Development & Integration Testing | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| Topic | Purpose | Documentation |
+|-------|---------|---------------|
+| **Local** | Development & Integration Testing | [docs/local.md](docs/local.md) |
 | **Production** | Scalable AWS Deployment | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
 | **Testing** | Quality Assurance | [docs/testing.md](docs/testing.md) |
+| **Scale** | Scalability, Limits & Failure Modes | [scale/scale.md](scale/scale.md) |
 | **Migration** | Infrastructure Evolution | [docs/migration.md](docs/migration.md) |
 | **Observability** | Logging, Metrics, SLOs | [docs/observability.md](docs/observability.md) |
 | **Security** | Authentication, Secrets | [docs/security.md](docs/security.md) |
@@ -123,74 +124,11 @@ flowchart TD
 - **Event-Driven**: DynamoDB Streams trigger automatically on completion.
 - **Cost**: Pay only when documents complete, not for idle time.
 
-## How Scalability is Achieved
+## Scalability & Failure Modes
 
-### 1. Parallel Page Processing
-Each PDF page is processed independently. A 100-page document spawns 100 parallel Gemini API calls, reducing latency from O(n) to O(1) per job.
+For detailed information on scalability patterns, performance limits, and failure handling at scale, see:
 
-```typescript
-// pages are processed in parallel, not sequentially
-await Promise.all(pages.map(page => this.geminiService.analyze(page)));
-```
-
-### 2. Kinesis Partition Keys
-Jobs are partitioned by `jobId`, ensuring ordered processing within a job while allowing parallelism across jobs.
-
-```typescript
-await kinesis.putRecord({
-  StreamName: STREAM_NAME,
-  PartitionKey: jobId, // All pages for same job go to same shard
-  Data: JSON.stringify(event),
-});
-```
-
-### 3. Idempotency via DynamoDB
-`jobId + pageNumber` composite keys prevent duplicate results. Re-processed events overwrite rather than append.
-
-```typescript
-// Idempotent write - same key = update, not duplicate
-await dynamodb.put({
-  TableName: TABLE,
-  Item: { PK: `JOB#${jobId}`, SK: `PAGE#${pageNumber}`, ...result }
-});
-```
-
-### 4. Backpressure Management
-Consumer concurrency is throttled via semaphores to respect Gemini API rate limits.
-
-```typescript
-const semaphore = new Semaphore(MAX_CONCURRENT_GEMINI_CALLS);
-await semaphore.acquire();
-try {
-  await gemini.analyze(page);
-} finally {
-  semaphore.release();
-}
-```
-
-## Scale & Limits
-
-| Metric | Expected Value |
-|--------|----------------|
-| **Concurrent uploads** | 100+ |
-| **Throughput (small docs)** | ~50 docs/min |
-| **Pages per document** | Up to 500 |
-| **First bottleneck** | Gemini API rate limits (RPM/TPM) |
-| **Kinesis shards** | 1 (scales to 10+) |
-| **Fargate tasks** | 1-10 (auto-scaled) |
-
-### Non-Goals
-- Real-time <1s latency for 100+ page documents
-- OCR for handwritten text (relies on Gemini vision capabilities)
-
-## Failure Modes
-
-| Failure | System Response | Recovery |
-|---------|-----------------|----------|
-| **Gemini Timeout** | Consumer retries with exponential backoff | Automatic via Kinesis retry policy |
-| **Consumer Crash** | Kinesis checkpointing ensures no data loss | New ECS task picks up from last checkpoint |
-| **S3 Outage** | API returns 503; ingestion halts | Manual retry once AWS service restores |
-| **DynamoDB Throttle** | On-demand billing auto-scales | Automatic; monitor `UserErrors` metric |
+**[scale/scale.md](scale/scale.md)** - Scalability, Limits & Failure Modes
 
 ## Quickstart (Local)
 
