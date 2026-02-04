@@ -11,7 +11,6 @@ Processing large volumes of PDF documents through ML models often hits scaling b
 - **Horizontally Scalable**: Parallel processing of PDF pages via ECS Fargate.
 - **Multi-tenant**: Strict data isolation using tenant-prefixed S3 paths and DynamoDB keys.
 - **Resilient**: Event-driven architecture with Kinesis-backed retries and idempotency.
-- **Versioned Aggregation**: Atomic locking prevents duplicate aggregation fires; version filtering excludes stale pages from retried processes.
 - **ML-Powered**: Native integration with Gemini API for document intelligence.
 - **Serverless Aggregation**: Automatic result assembly via DynamoDB Streams and Lambda.
 
@@ -99,7 +98,7 @@ flowchart TD
 | **Production** | Scalable AWS Deployment | [docs/PRODUCTION.md](docs/PRODUCTION.md) |
 | **Testing** | Quality Assurance | [docs/testing.md](docs/testing.md) |
 | **Scale** | Scalability, Limits & Failure Modes | [scale/scale.md](scale/scale.md) |
-| **Migration** | Infrastructure Evolution | [docs/migration.md](docs/migration.md) |
+| **CI/CD** | Automated Deployment Pipeline | [docs/cicd.md](docs/cicd.md) |
 | **Observability** | Logging, Metrics, SLOs | [docs/observability.md](docs/observability.md) |
 | **Security** | Authentication, Secrets | [docs/security.md](docs/security.md) |
 

@@ -16,12 +16,6 @@ variable "project_name" {
   default     = "document-orchestrator"
 }
 
-variable "gemini_api_key" {
-  description = "Gemini API key for ML processing"
-  type        = string
-  sensitive   = true
-}
-
 variable "file_size_threshold_mb" {
   description = "File size threshold for sync vs async processing (MB)"
   type        = number
@@ -32,4 +26,16 @@ variable "kinesis_shard_count" {
   description = "Number of Kinesis shards"
   type        = number
   default     = 1
+}
+
+variable "reaper_stuck_threshold_mins" {
+  description = "Minutes before a processing document is considered stuck"
+  type        = number
+  default     = 30
+}
+
+variable "reaper_cron_expression" {
+  description = "Cron expression for reaper scan interval"
+  type        = string
+  default     = "0 */5 * * * *"
 }

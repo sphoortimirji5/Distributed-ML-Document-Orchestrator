@@ -12,11 +12,6 @@ Parameters:
       - production
     Description: Environment name
   
-  GeminiApiKey:
-    Type: String
-    NoEcho: true
-    Description: Gemini API key for ML processing
-  
   FileSizeThresholdMB:
     Type: Number
     Default: 10
@@ -29,13 +24,15 @@ Parameters:
     MaxValue: 10
     Description: Number of Kinesis shards
   
-  LLMProvider:
+  ReaperStuckThresholdMins:
+    Type: Number
+    Default: 30
+    Description: Minutes before a processing document is considered stuck
+  
+  ReaperCronExpression:
     Type: String
-    Default: gemini
-    AllowedValues:
-      - gemini
-      - bedrock
-    Description: LLM provider to use (gemini for API key auth, bedrock for IAM auth)
+    Default: "0 */5 * * * *"
+    Description: Cron expression for reaper scan interval
   
   BedrockModel:
     Type: String
@@ -61,8 +58,10 @@ Globals:
         KINESIS_STREAM_NAME: !Ref ProcessingStream
         FILE_SIZE_THRESHOLD_MB: !Ref FileSizeThresholdMB
         SSM_PARAMETER_PATH: !Sub '/${AWS::StackName}/${Environment}/'
-        LLM_PROVIDER: !Ref LLMProvider
+        LLM_PROVIDER: bedrock
         BEDROCK_MODEL: !Ref BedrockModel
+        REAPER_STUCK_THRESHOLD_MINS: !Ref ReaperStuckThresholdMins
+        REAPER_CRON_EXPRESSION: !Ref ReaperCronExpression
 
 Resources:
   # ========================================
@@ -333,15 +332,10 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
   # ========================================
-  # Secrets & Configuration (SSM)
+  # Configuration (SSM)
   # ========================================
-  GeminiApiKeyParameter:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub '/${AWS::StackName}/${Environment}/GEMINI_API_KEY'
-      Type: String
-      Value: !Ref GeminiApiKey
-      Description: Gemini API key for ML processing
+  # Note: No API key needed for Bedrock - uses IAM Task Role authentication
+  # Bedrock permissions are defined in the ECS Task Role above
 
   # ECS Task Role
   ECSTaskRole:

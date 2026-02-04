@@ -205,14 +205,10 @@ resource "aws_kinesis_stream" "main" {
 }
 
 # ========================================
-# SSM Parameter
+# SSM Parameter (for non-secret config)
 # ========================================
-resource "aws_ssm_parameter" "gemini_api_key" {
-  name        = "/${var.project_name}/${var.environment}/GEMINI_API_KEY"
-  description = "Gemini API key for ML processing"
-  type        = "SecureString"
-  value       = var.gemini_api_key
-}
+# Note: No API key needed for Bedrock - uses IAM Task Role authentication
+# Bedrock permissions are defined in the ECS Task Role below
 
 # ========================================
 # IAM Roles
@@ -283,6 +279,13 @@ resource "aws_iam_role_policy" "app_permissions" {
         ]
         Effect   = "Allow"
         Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/${var.environment}/*"
+      },
+      {
+        Action = [
+          "bedrock:InvokeModel"
+        ]
+        Effect   = "Allow"
+        Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/*"
       }
     ]
   })
@@ -374,7 +377,11 @@ resource "aws_ecs_task_definition" "app" {
         { name = "S3_RESULTS_BUCKET", value = aws_s3_bucket.results.id },
         { name = "KINESIS_STREAM_NAME", value = aws_kinesis_stream.main.name },
         { name = "SSM_PARAMETER_PATH", value = "/${var.project_name}/${var.environment}/" },
-        { name = "FILE_SIZE_THRESHOLD_MB", value = tostring(var.file_size_threshold_mb) }
+        { name = "FILE_SIZE_THRESHOLD_MB", value = tostring(var.file_size_threshold_mb) },
+        { name = "REAPER_STUCK_THRESHOLD_MINS", value = tostring(var.reaper_stuck_threshold_mins) },
+        { name = "REAPER_CRON_EXPRESSION", value = var.reaper_cron_expression },
+        { name = "LLM_PROVIDER", value = "bedrock" },
+        { name = "BEDROCK_MODEL", value = "anthropic.claude-3-sonnet-20240229-v1:0" }
       ]
       logConfiguration = {
         logDriver = "awslogs"
