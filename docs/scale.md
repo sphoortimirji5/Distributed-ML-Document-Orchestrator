@@ -115,6 +115,41 @@ Key metrics to watch:
 
 ---
 
+## Scaling Configuration
+
+### ECS Auto Scaling
+
+```yaml
+# Target tracking based on CPU utilization
+ScalingPolicy:
+  TargetValue: 70
+  ScaleInCooldown: 300
+  ScaleOutCooldown: 60
+  PredefinedMetricType: ECSServiceAverageCPUUtilization
+
+# Min/Max tasks
+DesiredCount: 2
+MinCapacity: 1
+MaxCapacity: 10
+```
+
+### Lambda Concurrency
+
+| Function | Reserved Concurrency | Rationale |
+|----------|---------------------|-----------|
+| Worker | 50 | Match Gemini API rate limits |
+| Aggregator | 10 | Low-frequency, triggered by completions |
+
+### Kinesis Scaling
+
+| Shards | Throughput | When to Scale |
+|--------|------------|---------------|
+| 1 | 1 MB/s write, 2 MB/s read | Default |
+| 5 | 5 MB/s write, 10 MB/s read | >100 concurrent uploads |
+| 10 | 10 MB/s write, 20 MB/s read | High-volume batch processing |
+
+---
+
 ## Related Documentation
 
 - [Production Deployment Guide](../docs/PRODUCTION.md)

@@ -2,54 +2,8 @@
 
 This document provides detailed information on deploying the Distributed ML Document Orchestrator to AWS and managing the production environment.
 
-## Infrastructure Overview
 
-```mermaid
-flowchart TB
-    subgraph Internet
-        A[Users/Clients]
-    end
 
-    subgraph AWS["AWS Region"]
-        B[Application Load Balancer]
-        
-        subgraph VPC["VPC"]
-            subgraph Public["Public Subnets"]
-                C[NAT Gateway]
-            end
-            
-            subgraph Private["Private Subnets"]
-                D[ECS Fargate - API]
-                E[ECS Fargate - Consumer]
-            end
-        end
-        
-        F[(DynamoDB)]
-        G[(S3 Buckets)]
-        H{{Kinesis Stream}}
-        I[Lambda - Aggregator]
-        J[SSM Parameter Store]
-        K[CloudWatch]
-    end
-
-    A --> B
-    B --> D
-    D --> F
-    D --> G
-    D --> H
-    H --> E
-    E --> F
-    E --> G
-    F -- "Streams" --> I
-    I --> G
-    D --> C
-    E --> C
-    J -.-> D
-    J -.-> E
-    D --> K
-    E --> K
-    I --> K
-```
 
 ## Infrastructure Requirements
 
@@ -86,15 +40,9 @@ DYNAMODB_TABLE_NAME=<stack-name>-documents-production
 # Kinesis
 KINESIS_STREAM_NAME=<stack-name>-processing-production
 
-# LLM Provider Configuration
-# Option 1: Gemini (for development/testing)
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=<from-ssm-parameter-store>
-GEMINI_MODEL=gemini-1.5-flash
-
-# Option 2: AWS Bedrock (recommended for production)
-# LLM_PROVIDER=bedrock
-# BEDROCK_MODEL=anthropic.claude-3-sonnet-20240229-v1:0
+# LLM Provider Configuration (AWS Bedrock - recommended for production)
+LLM_PROVIDER=bedrock
+BEDROCK_MODEL=anthropic.claude-3-sonnet-20240229-v1:0
 # No API key needed - uses IAM Task Role authentication
 
 # Tuning
@@ -209,61 +157,7 @@ terraform apply
 - **Storage & DB**: S3 buckets (encrypted) and DynamoDB (with GSI and Streams)
 - **Security**: Granular IAM Roles and SSM Parameter Store for secrets
 
-## Health Checks
 
-### ALB Health Check
-
-```yaml
-# CloudFormation/CDK configuration
-HealthCheck:
-  Path: /health
-  Protocol: HTTP
-  Port: 3000
-  HealthyThresholdCount: 2
-  UnhealthyThresholdCount: 3
-  Interval: 30
-  Timeout: 5
-```
-
-### Container Health Check
-
-```dockerfile
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
-```
-
-## Scaling Strategy
-
-### ECS Auto Scaling
-
-```yaml
-# Target tracking based on CPU utilization
-ScalingPolicy:
-  TargetValue: 70
-  ScaleInCooldown: 300
-  ScaleOutCooldown: 60
-  PredefinedMetricType: ECSServiceAverageCPUUtilization
-
-# Min/Max tasks
-DesiredCount: 2
-MinCapacity: 1
-MaxCapacity: 10
-```
-
-### Lambda Concurrency
-
-| Function | Reserved Concurrency | Rationale |
-|----------|---------------------|-----------|
-| Worker | 50 | Match Gemini API rate limits |
-| Aggregator | 10 | Low-frequency, triggered by completions |
-
-### Kinesis Scaling
-
-| Shards | Throughput | When to Scale |
-|--------|------------|---------------|
-| 1 | 1 MB/s write, 2 MB/s read | Default |
-| 5 | 5 MB/s write, 10 MB/s read | >100 concurrent uploads |
-| 10 | 10 MB/s write, 20 MB/s read | High-volume batch processing |
 
 ## Multi-Tenancy & Data Isolation
 
@@ -367,18 +261,6 @@ See [docs/security.md](security.md) for detailed security documentation.
 | **Encryption in Transit** | HTTPS/TLS 1.2+ |
 | **Network** | VPC isolation, Security Groups |
 
-## Monitoring & Alerts
-
-### CloudWatch Alarms
-
-| Alarm | Metric | Threshold |
-|-------|--------|-----------|
-| Worker Errors | `Lambda.Errors` | >10 in 5 min |
-| DynamoDB Throttle | `UserErrors` | >5 in 5 min |
-| Kinesis Iterator Age | `GetRecords.IteratorAgeMilliseconds` | >60000 (1 min lag) |
-| ECS CPU High | `CPUUtilization` | >80% for 5 min |
-
-See [docs/observability.md](observability.md) for SLIs/SLOs and detailed metrics.
 
 ---
 **Note**: Always test deployments in a staging environment before applying to production.
