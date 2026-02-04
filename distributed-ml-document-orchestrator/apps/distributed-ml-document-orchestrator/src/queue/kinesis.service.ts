@@ -40,7 +40,11 @@ export class KinesisService {
         @Inject('KINESIS_CLIENT')
         private readonly kinesisClient: KinesisClient,
     ) {
-        this.streamName = process.env.KINESIS_STREAM_NAME || 'document-processing-stream';
+        const streamName = process.env.KINESIS_STREAM_NAME;
+        if (!streamName) {
+            throw new Error('KINESIS_STREAM_NAME environment variable is required');
+        }
+        this.streamName = streamName;
     }
 
     /**

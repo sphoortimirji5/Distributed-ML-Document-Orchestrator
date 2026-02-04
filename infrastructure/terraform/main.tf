@@ -381,7 +381,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "REAPER_STUCK_THRESHOLD_MINS", value = tostring(var.reaper_stuck_threshold_mins) },
         { name = "REAPER_CRON_EXPRESSION", value = var.reaper_cron_expression },
         { name = "LLM_PROVIDER", value = "bedrock" },
-        { name = "BEDROCK_MODEL", value = "anthropic.claude-3-sonnet-20240229-v1:0" }
+        { name = "LLM_MODEL", value = "anthropic.claude-3-sonnet-20240229-v1:0" }
       ]
       logConfiguration = {
         logDriver = "awslogs"

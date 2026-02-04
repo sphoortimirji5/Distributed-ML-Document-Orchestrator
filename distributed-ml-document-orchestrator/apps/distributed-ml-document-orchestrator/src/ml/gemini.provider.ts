@@ -2,18 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { LLMProvider, AnalysisResult } from './llm-provider.interface';
 
-/**
- * Google Gemini LLM Provider
- * 
- * Uses API key authentication via environment variable.
- * Suitable for development and testing environments.
- */
+/** Google Gemini LLM Provider - Uses API key authentication */
 @Injectable()
 export class GeminiProvider implements LLMProvider {
     private readonly logger = new Logger(GeminiProvider.name);
     private readonly genAI: GoogleGenerativeAI;
     private readonly modelInstance: any;
-    
+
     readonly name = 'gemini';
     readonly model: string;
 
@@ -23,11 +18,17 @@ export class GeminiProvider implements LLMProvider {
             this.logger.error('GEMINI_API_KEY is not defined in environment variables');
             throw new Error('GEMINI_API_KEY is missing');
         }
-        
-        this.model = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
+
+        const model = process.env.LLM_MODEL;
+        if (!model) {
+            this.logger.error('LLM_MODEL environment variable is required');
+            throw new Error('LLM_MODEL environment variable is required');
+        }
+        this.model = model;
+
         this.genAI = new GoogleGenerativeAI(apiKey);
         this.modelInstance = this.genAI.getGenerativeModel({ model: this.model });
-        
+
         this.logger.log(`Initialized Gemini provider with model: ${this.model}`);
     }
 
@@ -43,13 +44,12 @@ export class GeminiProvider implements LLMProvider {
 
             return this.parseResponse(responseText);
         } catch (error: any) {
-            // Handle rate limiting with exponential backoff
             if (error.message?.includes('429') && retries > 0) {
                 this.logger.warn(`Rate limit hit, retrying in ${delay}ms...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 return this.analyzeChunk(text, retries - 1, delay * 2);
             }
-            
+
             this.logger.error(`Gemini analysis failed: ${error.message}`, error.stack);
             throw new Error(`Gemini analysis failed: ${error.message}`);
         }
@@ -80,7 +80,6 @@ export class GeminiProvider implements LLMProvider {
     }
 
     private parseResponse(responseText: string): AnalysisResult {
-        // Attempt to extract JSON from the response
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0]);

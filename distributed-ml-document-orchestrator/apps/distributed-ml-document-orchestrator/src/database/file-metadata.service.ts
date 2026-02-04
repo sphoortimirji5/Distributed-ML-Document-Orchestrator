@@ -11,7 +11,11 @@ export class FileMetadataService {
         @Inject('DYNAMODB_CLIENT')
         private readonly dynamoClient: DynamoDBDocumentClient,
     ) {
-        this.tableName = process.env.DYNAMODB_TABLE_NAME || 'DocumentOrchestrator';
+        const tableName = process.env.DYNAMODB_TABLE_NAME;
+        if (!tableName) {
+            throw new Error('DYNAMODB_TABLE_NAME environment variable is required');
+        }
+        this.tableName = tableName;
     }
 
     /**

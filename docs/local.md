@@ -43,9 +43,10 @@ DYNAMODB_ENDPOINT=http://localhost:4566
 KINESIS_STREAM_NAME=document-processing-stream
 KINESIS_ENDPOINT=http://localhost:4566
 
-# Gemini API Configuration
+# LLM Configuration
+LLM_PROVIDER=gemini
+LLM_MODEL=gemini-1.5-flash
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-1.5-flash
 
 # Application Configuration
 NODE_ENV=development

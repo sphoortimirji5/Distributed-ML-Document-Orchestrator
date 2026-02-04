@@ -39,7 +39,7 @@ KINESIS_STREAM_NAME=<stack-name>-processing-production
 
 # LLM Provider Configuration (AWS Bedrock)
 LLM_PROVIDER=bedrock
-BEDROCK_MODEL=anthropic.claude-3-sonnet-20240229-v1:0
+LLM_MODEL=anthropic.claude-3-sonnet-20240229-v1:0
 # No API key needed - uses IAM Task Role authentication
 
 # Document Reaper (stuck document recovery)
@@ -62,7 +62,7 @@ Bedrock uses IAM authentication - no API keys in environment variables:
 1. **Set the provider:**
    ```bash
    LLM_PROVIDER=bedrock
-   BEDROCK_MODEL=anthropic.claude-3-sonnet-20240229-v1:0
+   LLM_MODEL=anthropic.claude-3-sonnet-20240229-v1:0
    ```
 
 2. **IAM Permissions (automatically configured):**
@@ -76,34 +76,15 @@ Bedrock uses IAM authentication - no API keys in environment variables:
 
 ## Deployment 
 
-### Terraform
+For automated deployment via GitHub Actions, see [cicd.md](cicd.md).
 
-Terraform provides a more granular approach to infrastructure management, ideal for complex multi-account setups.
-
-**1. Initialize Terraform:**
-```bash
-cd infrastructure/terraform
-terraform init
-```
-
-**2. Configure variables:**
-```bash
-cp terraform.tfvars.example terraform.tfvars
-```
-
-**3. Deploy:**
-```bash
-terraform plan
-terraform apply
-```
-
-**4. Terraform will create:**
-- **Networking**: VPC, Public Subnets, Internet Gateway, Route Tables
-- **Load Balancing**: Application Load Balancer with Target Groups
-- **Compute**: ECS Fargate Cluster and Service with auto-scaling
-- **Serverless**: Worker and Aggregator Lambda functions
-- **Storage & DB**: S3 buckets (encrypted) and DynamoDB (with GSI and Streams)
-- **Security**: Granular IAM Roles and SSM Parameter Store for secrets
+**Infrastructure created by CI/CD:**
+- **Networking**: VPC, Subnets, Internet Gateway
+- **Load Balancing**: ALB with Target Groups
+- **Compute**: ECS Fargate with auto-scaling
+- **Serverless**: Worker and Aggregator Lambda
+- **Storage**: S3 (encrypted) + DynamoDB (with Streams)
+- **Security**: IAM Roles + SSM Parameter Store
 
 
 

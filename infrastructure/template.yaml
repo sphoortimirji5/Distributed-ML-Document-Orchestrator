@@ -59,7 +59,7 @@ Globals:
         FILE_SIZE_THRESHOLD_MB: !Ref FileSizeThresholdMB
         SSM_PARAMETER_PATH: !Sub '/${AWS::StackName}/${Environment}/'
         LLM_PROVIDER: bedrock
-        BEDROCK_MODEL: !Ref BedrockModel
+        LLM_MODEL: !Ref BedrockModel
         REAPER_STUCK_THRESHOLD_MINS: !Ref ReaperStuckThresholdMins
         REAPER_CRON_EXPRESSION: !Ref ReaperCronExpression
 

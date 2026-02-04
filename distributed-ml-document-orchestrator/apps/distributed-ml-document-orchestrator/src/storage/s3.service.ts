@@ -41,8 +41,18 @@ export class S3Service {
         @Inject('S3_CLIENT')
         private readonly s3Client: S3Client,
     ) {
-        this.pdfBucket = process.env.S3_BUCKET_NAME || 'document-orchestrator-pdfs';
-        this.resultsBucket = process.env.S3_RESULTS_BUCKET || 'document-orchestrator-results';
+        const pdfBucket = process.env.S3_BUCKET_NAME;
+        const resultsBucket = process.env.S3_RESULTS_BUCKET;
+
+        if (!pdfBucket) {
+            throw new Error('S3_BUCKET_NAME environment variable is required');
+        }
+        if (!resultsBucket) {
+            throw new Error('S3_RESULTS_BUCKET environment variable is required');
+        }
+
+        this.pdfBucket = pdfBucket;
+        this.resultsBucket = resultsBucket;
     }
 
     /**
