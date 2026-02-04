@@ -15,15 +15,24 @@ export class AggregatorService {
         this.logger.log(`Aggregating results for document: ${fileId}`);
 
         try {
-            // Transition the document status to indicate aggregation is in progress
-            await this.documentStatusService.updateStatus(fileId, tenantId, 'aggregating');
+            // VERSIONED AGGREGATION: Atomically claim the lock to prevent double-fire
+            const lock = await this.documentStatusService.claimAggregationLock(fileId);
+            if (!lock.success) {
+                this.logger.warn(`Aggregation already in progress for ${fileId}, skipping duplicate trigger`);
+                return;
+            }
+            const currentVersion = lock.version;
+            this.logger.log(`Acquired aggregation lock for ${fileId} (version ${currentVersion})`);
 
             // Collect all individual chunk analysis results from the database
-            const pages = await this.documentStatusService.getDocumentPages(fileId);
+            const allPages = await this.documentStatusService.getDocumentPages(fileId);
+
+            // VERSIONED AGGREGATION: Filter pages by processingVersion matching current aggregationVersion
+            const pages = allPages.filter(p => p.processingVersion === currentVersion);
 
             // Guard Clause: Ensure all pages are present before building final JSON
             if (pages.length < totalPages) {
-                this.logger.warn(`Aggregation deferred for ${fileId}: Only ${pages.length}/${totalPages} pages available.`);
+                this.logger.warn(`Aggregation deferred for ${fileId}: Only ${pages.length}/${totalPages} pages match version ${currentVersion} (${allPages.length} total pages found)`);
                 // Reset status to processing so it can be re-triggered
                 await this.documentStatusService.updateStatus(fileId, tenantId, 'processing');
                 return;
@@ -34,6 +43,7 @@ export class AggregatorService {
                 tenantId,
                 processedAt: new Date().toISOString(),
                 totalPages,
+                aggregationVersion: currentVersion,
                 successCount: pages.filter(p => p.pageAnalysis && !JSON.parse(p.pageAnalysis).error).length,
                 failedCount: pages.filter(p => p.pageAnalysis && JSON.parse(p.pageAnalysis).error).length,
                 chunks: pages.map(p => ({
@@ -54,12 +64,13 @@ export class AggregatorService {
                 resultS3Key: resultsKey
             });
 
-            this.logger.log(`Successfully aggregated results for document: ${fileId}`);
-        } catch (error) {
-            this.logger.error(`Failed to aggregate results for ${fileId}: ${error.message}`, error.stack);
+            this.logger.log(`Successfully aggregated results for document: ${fileId} (version ${currentVersion})`);
+        } catch (error: unknown) {
+            const err = error as Error;
+            this.logger.error(`Failed to aggregate results for ${fileId}: ${err.message}`, err.stack);
             await this.documentStatusService.updateDocumentStatus(fileId, {
                 overallStatus: 'failed',
-                errorMessage: `Aggregation failed: ${error.message}`
+                errorMessage: `Aggregation failed: ${err.message}`
             });
             throw error;
         }

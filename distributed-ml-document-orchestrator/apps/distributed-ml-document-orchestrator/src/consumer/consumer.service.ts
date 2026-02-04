@@ -120,6 +120,19 @@ export class ConsumerService implements OnModuleInit {
             const chunks = pageTexts;
             this.logger.log(`Created ${chunks.length} chunks (one per page)`);
 
+            // VERSIONED AGGREGATION: Compute processingVersion for this run
+            // Pages are stamped with this version; aggregator filters by it
+            const status = await this.documentStatusService.getDocumentStatus(fileId);
+
+            // GUARD: Skip late retries if document already completed or failed
+            if (status?.overallStatus === 'completed' || status?.overallStatus === 'failed') {
+                this.logger.warn(`Skipping late page retry for ${fileId} (status=${status.overallStatus})`);
+                return;
+            }
+
+            const processingVersion = (status?.aggregationVersion ?? 0) + 1;
+            this.logger.log(`Using processingVersion ${processingVersion} for document ${fileId}`);
+
             // Iterate through each page and perform analysis using the Gemini API
             for (let i = 0; i < chunks.length; i++) {
                 const chunk = chunks[i];
@@ -128,12 +141,14 @@ export class ConsumerService implements OnModuleInit {
                 try {
                     const analysis = await this.geminiService.analyzeChunk(chunk);
 
-                    // Persist the analysis result for this specific page
+                    // Persist the analysis result for this specific page with version stamp
                     await this.documentStatusService.savePageAttributes(
                         fileId,
                         tenantId,
                         i + 1,
-                        JSON.stringify(analysis)
+                        JSON.stringify(analysis),
+                        undefined,
+                        processingVersion
                     );
                 } catch (chunkError) {
                     this.logger.error(`Failed to process page ${i + 1}`, chunkError);
@@ -142,7 +157,9 @@ export class ConsumerService implements OnModuleInit {
                         fileId,
                         tenantId,
                         i + 1,
-                        JSON.stringify({ error: 'Analysis failed', timestamp: new Date().toISOString() })
+                        JSON.stringify({ error: 'Analysis failed', timestamp: new Date().toISOString() }),
+                        undefined,
+                        processingVersion
                     );
                 } finally {
                     // Track progress by incrementing the count of attempted pages

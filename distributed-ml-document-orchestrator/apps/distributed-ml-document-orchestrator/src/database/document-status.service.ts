@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { PutCommand, GetCommand, UpdateCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, GetCommand, UpdateCommand, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { DocumentStatus, DynamoDBKeyGenerator } from './models';
 
 @Injectable()
@@ -102,6 +102,7 @@ export class DocumentStatusService {
     /**
      * Persists analysis results or metadata for a specific document chunk.
      * Each chunk is stored as a separate record in the single-table design.
+     * @param processingVersion - Immutable version stamp set when page is processed (not aggregation version)
      */
     async savePageAttributes(
         fileId: string,
@@ -109,6 +110,7 @@ export class DocumentStatusService {
         pageNumber: number,
         pageAnalysis?: string,
         chunkIds?: string[],
+        processingVersion?: number,
     ): Promise<DocumentStatus> {
         const keys = DynamoDBKeyGenerator.documentPageKeys(fileId, pageNumber);
 
@@ -119,6 +121,7 @@ export class DocumentStatusService {
             pageNumber,
             pageAnalysis,
             chunkIds,
+            processingVersion,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             ttl: DynamoDBKeyGenerator.generateTTL(90),
@@ -210,10 +213,16 @@ export class DocumentStatusService {
         return (result.Items as DocumentStatus[]) || [];
     }
     /**
-     * Update overall status
+     * Update overall status with optional error message.
      */
-    async updateStatus(fileId: string, tenantId: string, status: string): Promise<void> {
-        await this.updateDocumentStatus(fileId, { overallStatus: status as DocumentStatus['overallStatus'] });
+    async updateStatus(fileId: string, tenantId: string, status: string, errorMessage?: string): Promise<void> {
+        const updates: Partial<Pick<DocumentStatus, 'overallStatus' | 'errorMessage'>> = {
+            overallStatus: status as DocumentStatus['overallStatus'],
+        };
+        if (errorMessage) {
+            updates.errorMessage = errorMessage;
+        }
+        await this.updateDocumentStatus(fileId, updates);
     }
 
     /**
@@ -251,5 +260,77 @@ export class DocumentStatusService {
             }),
         );
         return (result.Items as DocumentStatus[]) || [];
+    }
+
+    /**
+     * Atomically claims the aggregation lock for a document using optimistic locking.
+     * This prevents race conditions when multiple DynamoDB Stream triggers fire simultaneously.
+     * 
+     * @returns { success: true, version: N } if lock acquired, { success: false, version: 0 } if already locked
+     */
+    async claimAggregationLock(fileId: string): Promise<{ success: boolean; version: number }> {
+        const keys = DynamoDBKeyGenerator.documentStatusKeys(fileId);
+
+        try {
+            const result = await this.dynamoClient.send(
+                new UpdateCommand({
+                    TableName: this.tableName,
+                    Key: keys,
+                    UpdateExpression: 'SET aggregationVersion = if_not_exists(aggregationVersion, :zero) + :one, overallStatus = :agg, updatedAt = :now',
+                    ConditionExpression: 'overallStatus = :processing',
+                    ExpressionAttributeValues: {
+                        ':zero': 0,
+                        ':one': 1,
+                        ':agg': 'aggregating',
+                        ':processing': 'processing',
+                        ':now': new Date().toISOString(),
+                    },
+                    ReturnValues: 'ALL_NEW',
+                }),
+            );
+            return { success: true, version: (result.Attributes?.aggregationVersion as number) ?? 1 };
+        } catch (error: unknown) {
+            const err = error as { name?: string };
+            if (err.name === 'ConditionalCheckFailedException') {
+                return { success: false, version: 0 };
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Find documents stuck in 'processing' state for longer than the threshold.
+     * Used by the Reaper service to detect and handle stuck documents.
+     */
+    async getStuckDocuments(thresholdMs: number): Promise<Array<{
+        fileId: string;
+        tenantId: string;
+        processedPages: number;
+        totalPages: number;
+        updatedAt: string;
+    }>> {
+        const cutoffTime = new Date(Date.now() - thresholdMs).toISOString();
+
+        // Scan for documents in 'processing' state
+        // Note: In production, consider using a GSI on overallStatus for efficiency
+        const result = await this.dynamoClient.send(
+            new ScanCommand({
+                TableName: this.tableName,
+                FilterExpression: 'SK = :status AND overallStatus = :processing AND updatedAt < :cutoff',
+                ExpressionAttributeValues: {
+                    ':status': 'STATUS',
+                    ':processing': 'processing',
+                    ':cutoff': cutoffTime,
+                },
+            }),
+        );
+
+        return (result.Items || []).map((item) => ({
+            fileId: item.fileId as string,
+            tenantId: item.tenantId as string,
+            processedPages: (item.processedPages as number) ?? 0,
+            totalPages: (item.totalPages as number) ?? 0,
+            updatedAt: item.updatedAt as string,
+        }));
     }
 }

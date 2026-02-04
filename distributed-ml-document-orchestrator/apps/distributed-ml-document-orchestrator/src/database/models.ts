@@ -60,6 +60,7 @@ export interface DocumentStatus {
     pageNumber?: number;
     pageAnalysis?: string; // JSON string of Gemini analysis
     chunkIds?: string[];
+    processingVersion?: number; // Immutable per processing run - set when page is processed
 
     // Document-level status (when SK = STATUS)
     // These fields trigger DynamoDB Streams when updated
@@ -67,6 +68,7 @@ export interface DocumentStatus {
     totalPages?: number;
     processedPages?: number; // CRITICAL: Incremented by workers, triggers Lambda when == totalPages
     failedPages?: number;
+    aggregationVersion?: number; // Document-level only - incremented on each aggregation attempt
 
     // Processing metadata
     startedAt?: string;

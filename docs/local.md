@@ -143,6 +143,13 @@ The project includes a comprehensive E2E test script that verifies both synchron
    npm run dev:api-gateway
    ```
 
+   > **Tip**: If NX watch mode causes restarts during testing, use ts-node directly for stability:
+   > ```bash
+   > cd distributed-ml-document-orchestrator
+   > npx ts-node --project apps/distributed-ml-document-orchestrator/tsconfig.app.json \
+   >   apps/distributed-ml-document-orchestrator/src/main.ts
+   > ```
+
 2. **Run the E2E Script**:
    ```bash
    cd distributed-ml-document-orchestrator
